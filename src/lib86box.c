@@ -245,13 +245,14 @@ lib86box_framebuffer_t lib86box_get_framebuffer(void)
 
     bitmap_t *bmp = mon->target_buffer;
 
-    /* Return actual content dimensions (mon_unscaled_size_x/y), not buffer allocation size.
+    /* Return actual content dimensions.
+     * mon_unscaled_size_x is the actual pixel width.
+     * mon_efscrnsz_y is the actual effective pixel height (mon_unscaled_size_y may be adjusted for 4:3).
      * The buffer is typically allocated at 2048x2048 but actual content is smaller.
-     * mon_unscaled_size_x/y are set by set_screen_size() and are the reliable pixel dimensions.
      * Stride uses the allocated buffer width for correct row addressing. */
     fb.data = bmp->dat;
     fb.width = mon->mon_unscaled_size_x > 0 ? mon->mon_unscaled_size_x : bmp->w;
-    fb.height = mon->mon_unscaled_size_y > 0 ? mon->mon_unscaled_size_y : bmp->h;
+    fb.height = mon->mon_efscrnsz_y > 0 ? mon->mon_efscrnsz_y : bmp->h;
     /* Stride is allocated buffer width * 4 bytes per pixel (ARGB32) */
     fb.stride = bmp->w * sizeof(uint32_t);
 
