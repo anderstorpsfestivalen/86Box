@@ -67,3 +67,7 @@ CMakeLists.txt.user
 
 # Jetbrains CLion
 .idea
+
+# Build artifacts
+build-lib/src/86Box.app/
+build-lib/src/unix/
