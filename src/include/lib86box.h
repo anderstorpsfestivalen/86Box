@@ -23,12 +23,17 @@ extern "C" {
 /*
  * Framebuffer structure - provides direct access to video output
  * Format is ARGB32 (0xAARRGGBB), which on little-endian is BGRA byte order
+ *
+ * The buffer is typically 2048x2048, but actual content is at (x,y) with size (width,height).
+ * Use x and y as offsets into the data when copying.
  */
 typedef struct {
-    uint32_t *data;     /* Pixel data pointer */
-    int width;          /* Width in pixels */
-    int height;         /* Height in pixels */
-    int stride;         /* Bytes per row (may be > width * 4 due to alignment) */
+    uint32_t *data;     /* Pixel data pointer (to full buffer, use x/y offset) */
+    int x;              /* X offset of content in buffer */
+    int y;              /* Y offset of content in buffer */
+    int width;          /* Width of content in pixels */
+    int height;         /* Height of content in pixels */
+    int stride;         /* Bytes per row of the full buffer */
 } lib86box_framebuffer_t;
 
 /*

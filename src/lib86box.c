@@ -27,6 +27,9 @@ static bool lib86box_initialized = false;
 static bool lib86box_running = false;
 static atomic_bool lib86box_fb_dirty = false;
 
+/* Last blit region (where content is within the 2048x2048 buffer) */
+static int blit_x = 0, blit_y = 0, blit_w = 0, blit_h = 0;
+
 /* Callbacks */
 static lib86box_frame_callback_t frame_callback = NULL;
 static void *frame_callback_user_data = NULL;
@@ -43,7 +46,11 @@ static int last_fb_height = 0;
  */
 static void lib86box_blit(int x, int y, int w, int h, int monitor_index)
 {
-    (void)x; (void)y; (void)w; (void)h;  /* Unused parameters */
+    /* Save the blit region - this tells us where content is in the 2048x2048 buffer */
+    blit_x = x;
+    blit_y = y;
+    blit_w = w;
+    blit_h = h;
 
     /* Mark framebuffer as dirty */
     atomic_store(&lib86box_fb_dirty, true);
@@ -232,7 +239,7 @@ void lib86box_reset_hard(void)
 
 lib86box_framebuffer_t lib86box_get_framebuffer(void)
 {
-    lib86box_framebuffer_t fb = { NULL, 0, 0, 0 };
+    lib86box_framebuffer_t fb = { NULL, 0, 0, 0, 0, 0 };
 
     if (!lib86box_initialized) {
         return fb;
@@ -245,14 +252,22 @@ lib86box_framebuffer_t lib86box_get_framebuffer(void)
 
     bitmap_t *bmp = mon->target_buffer;
 
-    /* Return actual content dimensions.
-     * mon_unscaled_size_x is the actual pixel width.
-     * mon_efscrnsz_y is the actual effective pixel height (mon_unscaled_size_y may be adjusted for 4:3).
-     * The buffer is typically allocated at 2048x2048 but actual content is smaller.
-     * Stride uses the allocated buffer width for correct row addressing. */
+    /* Debug: print blit region to understand the offsets */
+    static int last_bx = -1, last_by = -1, last_bw = -1, last_bh = -1;
+    if (blit_x != last_bx || blit_y != last_by || blit_w != last_bw || blit_h != last_bh) {
+        last_bx = blit_x; last_by = blit_y; last_bw = blit_w; last_bh = blit_h;
+        fprintf(stderr, "[lib86box] blit region: x=%d y=%d w=%d h=%d\n",
+            blit_x, blit_y, blit_w, blit_h);
+    }
+
+    /* Return framebuffer with offset information.
+     * The blit callback provides x, y, w, h which tell us where in the 2048x2048
+     * buffer the actual content is located. The caller should use these offsets. */
     fb.data = bmp->dat;
-    fb.width = mon->mon_unscaled_size_x > 0 ? mon->mon_unscaled_size_x : bmp->w;
-    fb.height = mon->mon_efscrnsz_y > 0 ? mon->mon_efscrnsz_y : bmp->h;
+    fb.x = blit_x;
+    fb.y = blit_y;
+    fb.width = blit_w > 0 ? blit_w : bmp->w;
+    fb.height = blit_h > 0 ? blit_h : bmp->h;
     /* Stride is allocated buffer width * 4 bytes per pixel (ARGB32) */
     fb.stride = bmp->w * sizeof(uint32_t);
 
