@@ -18,6 +18,8 @@
 #include <86box/keyboard.h>
 #include <86box/mouse.h>
 #include <86box/thread.h>
+#include <86box/mem.h>
+#include <86box/rom.h>
 #include <lib86box.h>
 
 /* State tracking */
@@ -36,6 +38,21 @@ static int last_fb_width = 0;
 static int last_fb_height = 0;
 
 /*
+ * Internal blit callback - called by 86Box's video system when a frame is ready.
+ * This just marks the framebuffer as dirty and signals completion.
+ */
+static void lib86box_blit(int x, int y, int w, int h, int monitor_index)
+{
+    (void)x; (void)y; (void)w; (void)h;  /* Unused parameters */
+
+    /* Mark framebuffer as dirty */
+    atomic_store(&lib86box_fb_dirty, true);
+
+    /* Signal that we're done with the buffer so 86Box can continue rendering next frame */
+    video_blit_complete_monitor(monitor_index);
+}
+
+/*
  * Initialization and shutdown
  */
 
@@ -45,33 +62,72 @@ int lib86box_init(const char *config_path, const char *rom_path)
         return -1;  /* Already initialized */
     }
 
-    /* Set up paths */
+    /* Build argc/argv for pc_init with proper command-line arguments
+     * pc_init() parses these to set up paths correctly */
+    static char arg0[] = "lib86box";
+    static char arg_config[] = "-C";
+    static char arg_rom[] = "-R";
+    static char arg_vmpath[] = "-P";
+    static char config_buf[2048];
+    static char rom_buf[2048];
+    static char vmpath_buf[2048];
+
+    char *fake_argv[12];
+    int fake_argc = 1;
+    fake_argv[0] = arg0;
+
     if (config_path) {
-        /* Set config file path - 86Box uses cfg_path global */
-        strncpy(cfg_path, config_path, sizeof(cfg_path) - 1);
-        cfg_path[sizeof(cfg_path) - 1] = '\0';
+        strncpy(config_buf, config_path, sizeof(config_buf) - 1);
+        config_buf[sizeof(config_buf) - 1] = '\0';
+        fake_argv[fake_argc++] = arg_config;
+        fake_argv[fake_argc++] = config_buf;
+
+        /* Also set the VM path to the directory containing the config file */
+        strncpy(vmpath_buf, config_path, sizeof(vmpath_buf) - 1);
+        vmpath_buf[sizeof(vmpath_buf) - 1] = '\0';
+        /* Find last slash and truncate to get directory */
+        char *last_slash = strrchr(vmpath_buf, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            fake_argv[fake_argc++] = arg_vmpath;
+            fake_argv[fake_argc++] = vmpath_buf;
+        }
     }
 
     if (rom_path) {
-        /* Set ROM path - 86Box uses rom_path global */
-        strncpy(exe_path, rom_path, sizeof(exe_path) - 1);
-        exe_path[sizeof(exe_path) - 1] = '\0';
+        strncpy(rom_buf, rom_path, sizeof(rom_buf) - 1);
+        rom_buf[sizeof(rom_buf) - 1] = '\0';
+        fake_argv[fake_argc++] = arg_rom;
+        fake_argv[fake_argc++] = rom_buf;
     }
 
-    /* Build fake argc/argv for pc_init */
-    char *fake_argv[] = { "lib86box", NULL };
-    int fake_argc = 1;
+    fake_argv[fake_argc] = NULL;
 
-    /* Call 86Box's main initialization */
+    /* Call 86Box's main initialization
+     * Note: pc_init returns 1 for success, 0 for failure */
     int result = pc_init(fake_argc, fake_argv);
-    if (result != 0) {
-        return result;
+    if (result == 0) {
+        return 1;  /* Return non-zero to indicate failure to caller */
     }
+
+    /* Check that required ROMs are available */
+    if (!pc_init_roms()) {
+        return 2;  /* No usable ROMs found */
+    }
+
+    /* Initialize modules */
+    pc_init_modules();
+
+    /* Register our blit callback so we get notified when frames are ready */
+    video_setblit(lib86box_blit);
+
+    /* Fire up the machine - this initializes CPU, memory, devices etc. */
+    pc_reset_hard_init();
 
     lib86box_initialized = true;
     lib86box_running = false;
 
-    return 0;
+    return 0;  /* Success */
 }
 
 void lib86box_shutdown(void)
@@ -81,6 +137,7 @@ void lib86box_shutdown(void)
     }
 
     lib86box_running = false;
+    video_setblit(NULL);  /* Unregister blit callback */
     pc_close(NULL);
     lib86box_initialized = false;
 }
@@ -123,14 +180,19 @@ void lib86box_run_frame(void)
         return;
     }
 
-    /* Run one frame of emulation */
-    pc_run();
+    /* Run emulation for ~16ms worth of time (targeting 60fps display).
+     * pc_run() executes cpu_s->rspeed/1000 cycles, which is ~1ms of emulation.
+     * We need to call it multiple times to keep up with real time. */
+    for (int i = 0; i < 16; i++) {
+        pc_run();
+    }
 
-    /* Check for resize */
+    /* Check for resize using unscaled size (the actual pixel dimensions set by set_screen_size).
+     * mon_xsize/mon_ysize may be set by some video cards but mon_unscaled_size_x/y is more reliable. */
     monitor_t *mon = &monitors[0];
-    if (mon->target_buffer) {
-        int w = mon->target_buffer->w;
-        int h = mon->target_buffer->h;
+    if (mon->target_buffer && mon->mon_unscaled_size_x > 0 && mon->mon_unscaled_size_y > 0) {
+        int w = mon->mon_unscaled_size_x;
+        int h = mon->mon_unscaled_size_y;
 
         if (w != last_fb_width || h != last_fb_height) {
             last_fb_width = w;
@@ -142,8 +204,7 @@ void lib86box_run_frame(void)
         }
     }
 
-    /* Mark framebuffer as dirty */
-    atomic_store(&lib86box_fb_dirty, true);
+    /* Note: framebuffer dirty flag is set by lib86box_blit callback, not here */
 
     /* Call frame callback */
     if (frame_callback) {
@@ -184,10 +245,14 @@ lib86box_framebuffer_t lib86box_get_framebuffer(void)
 
     bitmap_t *bmp = mon->target_buffer;
 
+    /* Return actual content dimensions (mon_unscaled_size_x/y), not buffer allocation size.
+     * The buffer is typically allocated at 2048x2048 but actual content is smaller.
+     * mon_unscaled_size_x/y are set by set_screen_size() and are the reliable pixel dimensions.
+     * Stride uses the allocated buffer width for correct row addressing. */
     fb.data = bmp->dat;
-    fb.width = bmp->w;
-    fb.height = bmp->h;
-    /* Stride is width * 4 bytes per pixel (ARGB32) */
+    fb.width = mon->mon_unscaled_size_x > 0 ? mon->mon_unscaled_size_x : bmp->w;
+    fb.height = mon->mon_unscaled_size_y > 0 ? mon->mon_unscaled_size_y : bmp->h;
+    /* Stride is allocated buffer width * 4 bytes per pixel (ARGB32) */
     fb.stride = bmp->w * sizeof(uint32_t);
 
     return fb;

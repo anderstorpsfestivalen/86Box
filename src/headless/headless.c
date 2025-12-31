@@ -214,7 +214,10 @@ plat_get_temp_dir(char *outbuf, uint8_t len)
 void
 plat_get_vmm_dir(char *outbuf, size_t len)
 {
-    strncpy(outbuf, "/tmp", len);
+    /* Return empty string to disable VM manager mode in library builds */
+    if (len > 0) {
+        outbuf[0] = '\0';
+    }
 }
 
 void
