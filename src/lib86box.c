@@ -194,6 +194,9 @@ void lib86box_run_frame(void)
         pc_run();
     }
 
+    /* Process mouse input - the timer-based polling may not work reliably in lib mode */
+    mouse_process();
+
     /* Check for resize using unscaled size (the actual pixel dimensions set by set_screen_size).
      * mon_xsize/mon_ysize may be set by some video cards but mon_unscaled_size_x/y is more reliable. */
     monitor_t *mon = &monitors[0];
@@ -252,14 +255,6 @@ lib86box_framebuffer_t lib86box_get_framebuffer(void)
 
     bitmap_t *bmp = mon->target_buffer;
 
-    /* Debug: print blit region to understand the offsets */
-    static int last_bx = -1, last_by = -1, last_bw = -1, last_bh = -1;
-    if (blit_x != last_bx || blit_y != last_by || blit_w != last_bw || blit_h != last_bh) {
-        last_bx = blit_x; last_by = blit_y; last_bw = blit_w; last_bh = blit_h;
-        fprintf(stderr, "[lib86box] blit region: x=%d y=%d w=%d h=%d\n",
-            blit_x, blit_y, blit_w, blit_h);
-    }
-
     /* Return framebuffer with offset information.
      * The blit callback provides x, y, w, h which tell us where in the 2048x2048
      * buffer the actual content is located. The caller should use these offsets. */
@@ -304,6 +299,8 @@ void lib86box_mouse_move(int dx, int dy)
     }
 
     mouse_scale(dx, dy);
+    /* Process immediately for lower latency */
+    mouse_process();
 }
 
 void lib86box_mouse_move_abs(int x, int y)
@@ -324,6 +321,13 @@ void lib86box_mouse_buttons(int buttons)
     }
 
     mouse_set_buttons_ex(buttons);
+    /* Process immediately for lower latency */
+    mouse_process();
+}
+
+void lib86box_mouse_set_capture(int captured)
+{
+    mouse_capture = captured;
 }
 
 /*

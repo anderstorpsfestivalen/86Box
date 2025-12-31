@@ -108,6 +108,11 @@ void lib86box_mouse_move_abs(int x, int y);
  * buttons: bitmask (bit 0 = left, bit 1 = right, bit 2 = middle) */
 void lib86box_mouse_buttons(int buttons);
 
+/* Set mouse capture state
+ * captured: 1 = mouse is captured by host, 0 = not captured
+ * This must be set to 1 for mouse input to work */
+void lib86box_mouse_set_capture(int captured);
+
 /*
  * Callbacks for events (optional)
  */
