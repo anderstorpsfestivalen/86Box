@@ -34,5 +34,5 @@ if(DYNAREC)
             "Old dynarec is incompatible with target platform ${ARCH}")
     endif()
 
-    target_link_libraries(86Box dynarec cgt)
+    target_link_libraries(${86BOX_TARGET} dynarec cgt)
 endif()

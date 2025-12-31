@@ -293,9 +293,9 @@ endif()
 
 if(WIN32)
     enable_language(RC)
-    target_sources(86Box PUBLIC 86Box-qt.rc)
+    target_sources(${86BOX_TARGET} PUBLIC 86Box-qt.rc)
     target_sources(plat PRIVATE win_dynld.c)
-    target_link_libraries(86Box dwmapi)
+    target_link_libraries(${86BOX_TARGET} dwmapi)
 
     # CMake 3.22 messed this up for clang/clang++
     # See https://gitlab.kitware.com/cmake/cmake/-/issues/22611
@@ -304,7 +304,7 @@ if(WIN32)
         # we include ours in 86Box.rc. We therefore need to pass the manifest
         # directly as as a source file, so the linker can use that instead.
         set_property(SOURCE 86Box-qt.rc DIRECTORY .. PROPERTY COMPILE_DEFINITIONS NO_INCLUDE_MANIFEST)
-        target_sources(86Box PRIVATE 86Box.manifest)
+        target_sources(${86BOX_TARGET} PRIVATE 86Box.manifest)
     endif()
 
     if (MINGW)
@@ -316,16 +316,16 @@ endif()
 
 if(WIN32 AND NOT SDL_JOYSTICK)
     target_sources(plat PRIVATE win_joystick_rawinput.c)
-    target_link_libraries(86Box hid)
+    target_link_libraries(${86BOX_TARGET} hid)
 else()
     find_package(SDL2 REQUIRED)
     include_directories(${SDL2_INCLUDE_DIRS})
     if(STATIC_BUILD AND TARGET SDL2::SDL2-static)
-        target_link_libraries(86Box SDL2::SDL2-static)
+        target_link_libraries(${86BOX_TARGET} SDL2::SDL2-static)
     elseif(TARGET SDL2::SDL2)
-        target_link_libraries(86Box SDL2::SDL2)
+        target_link_libraries(${86BOX_TARGET} SDL2::SDL2)
     else()
-        target_link_libraries(86Box ${SDL2_LIBRARIES})
+        target_link_libraries(${86BOX_TARGET} ${SDL2_LIBRARIES})
     endif()
     target_sources(plat PRIVATE sdl_joystick.c)
 endif()

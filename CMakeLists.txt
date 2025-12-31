@@ -126,6 +126,7 @@ set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
 #      Option       Description                                                  Def.
 #      ------       -----------                                                  ----
 option(RELEASE      "Release build"                                              OFF)
+option(BUILD_LIBRARY "Build as shared library (lib86box)"                        OFF)
 option(DYNAREC      "Dynamic recompiler"                                         ON)
 option(OPENAL       "OpenAL"                                                     ON)
 option(RTMIDI       "RtMidi"                                                     ON)
@@ -234,5 +235,17 @@ if(LIBASAN)
 endif()
 
 set(CMAKE_TOP_LEVEL_PROCESSED TRUE)
+
+# Set the target name based on build type
+if(BUILD_LIBRARY)
+    set(86BOX_TARGET 86box)
+    # Disable features that require UI for library builds, but keep audio
+    set(DISCORD OFF CACHE BOOL "" FORCE)
+    set(QT OFF CACHE BOOL "" FORCE)
+    set(RTMIDI OFF CACHE BOOL "" FORCE)
+    # Keep OPENAL and FLUIDSYNTH enabled for audio output
+else()
+    set(86BOX_TARGET 86Box)
+endif()
 
 add_subdirectory(src)

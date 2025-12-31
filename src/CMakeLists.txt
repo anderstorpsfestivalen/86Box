@@ -24,7 +24,8 @@ if(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-add_executable(86Box
+# Core source files shared between executable and library
+set(86BOX_CORE_SOURCES
     86box.c
     config.c
     timer.c
@@ -50,17 +51,40 @@ add_executable(86Box
     machine_status.c
 )
 
+if(BUILD_LIBRARY)
+    # Build as shared library
+    add_library(${86BOX_TARGET} SHARED
+        ${86BOX_CORE_SOURCES}
+        lib86box.c
+    )
+    target_compile_definitions(${86BOX_TARGET} PRIVATE LIB86BOX_BUILD)
+    set_target_properties(${86BOX_TARGET} PROPERTIES
+        OUTPUT_NAME "86box"
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+    )
+    # Disable features that require UI for library builds, keep audio
+    set(DISCORD OFF)
+    set(QT OFF)
+    set(RTMIDI OFF)
+else()
+    # Build as executable (normal mode)
+    add_executable(${86BOX_TARGET}
+        ${86BOX_CORE_SOURCES}
+    )
+endif()
+
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     add_compile_definitions(_FILE_OFFSET_BITS=64 _LARGEFILE_SOURCE=1 _LARGEFILE64_SOURCE=1)
 endif()
 
 if(CPPTHREADS)
-    target_sources(86Box PRIVATE thread.cpp)
+    target_sources(${86BOX_TARGET} PRIVATE thread.cpp)
 endif()
 
 if(GDBSTUB)
     add_compile_definitions(USE_GDBSTUB)
-    target_sources(86Box PRIVATE gdbstub.c)
+    target_sources(${86BOX_TARGET} PRIVATE gdbstub.c)
 endif()
 
 if(NEW_DYNAREC)
@@ -77,7 +101,7 @@ endif()
 
 if(DISCORD)
     add_compile_definitions(DISCORD)
-    target_sources(86Box PRIVATE discord.c)
+    target_sources(${86BOX_TARGET} PRIVATE discord.c)
 endif()
 
 if(DEBUGREGS486)
@@ -96,9 +120,9 @@ if(VNC)
             vnc.c
             vnc_keymap.c
         )
-        target_link_libraries(86Box vnc LibVNCServer::vncserver)
+        target_link_libraries(${86BOX_TARGET} vnc LibVNCServer::vncserver)
         if(WIN32)
-            target_link_libraries(86Box ws2_32)
+            target_link_libraries(${86BOX_TARGET} ws2_32)
         endif()
     endif()
 endif()
@@ -117,7 +141,7 @@ if(INSTRUMENT)
     add_compile_definitions(USE_INSTRUMENT)
 endif()
 
-target_link_libraries(86Box
+target_link_libraries(${86BOX_TARGET}
     cpu
     chipset
     mch
@@ -142,12 +166,12 @@ target_link_libraries(86Box
 )
 
 if(HAIKU)
-    target_link_libraries(86Box be)
+    target_link_libraries(${86BOX_TARGET} be)
 endif()
 
 if(STATIC_BUILD)
     if(MINGW OR UNIX)
-        target_link_options(86Box PRIVATE "-static")
+        target_link_options(${86BOX_TARGET} PRIVATE "-static")
         set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     endif()
 endif()
@@ -177,12 +201,12 @@ endif()
 if(APPLE)
     # Freetype is dynamically loaded by the emulator, however, we link it
     # on macOS so it gets copied to the bundle by the installation process
-    target_link_libraries(86Box Freetype::Freetype)
+    target_link_libraries(${86BOX_TARGET} Freetype::Freetype)
 endif()
 
 find_package(PNG REQUIRED)
 include_directories(${PNG_INCLUDE_DIRS})
-target_link_libraries(86Box PNG::PNG)
+target_link_libraries(${86BOX_TARGET} PNG::PNG)
 
 configure_file(include/86box/version.h.in include/86box/version.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
@@ -209,15 +233,24 @@ endif()
 if(MINITRACE)
     add_compile_definitions(MTR_ENABLED)
     add_library(minitrace OBJECT minitrace/minitrace.c)
-    target_link_libraries(86Box minitrace)
+    target_link_libraries(${86BOX_TARGET} minitrace)
 endif()
 
-if(WIN32 OR (APPLE AND CMAKE_MACOSX_BUNDLE))
+if(BUILD_LIBRARY)
+    # Install shared library
+    install(TARGETS ${86BOX_TARGET}
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+    )
+    # Install public header
+    install(FILES include/lib86box.h DESTINATION include)
+elseif(WIN32 OR (APPLE AND CMAKE_MACOSX_BUNDLE))
     # Copy the binary to the root of the install prefix on Windows and macOS
-    install(TARGETS 86Box DESTINATION ".")
+    install(TARGETS ${86BOX_TARGET} DESTINATION ".")
 else()
     # On Linux we want to copy the binary to the `bin` folder.
-    install(TARGETS 86Box)
+    install(TARGETS ${86BOX_TARGET})
 endif()
 
 
@@ -278,7 +311,11 @@ if (APPLE)
     add_subdirectory(mac)
 endif()
 
-if (QT)
+if(BUILD_LIBRARY)
+    # Use headless platform for library builds
+    add_compile_definitions(USE_HEADLESS)
+    add_subdirectory(headless)
+elseif(QT)
     add_subdirectory(qt)
 else()
     add_compile_definitions(USE_SDL_UI)
@@ -286,5 +323,5 @@ else()
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-    add_custom_command(TARGET 86Box POST_BUILD COMMAND paxctl ARGS +m $<TARGET_FILE:86Box> COMMENT "Disable PaX MPROTECT")
+    add_custom_command(TARGET ${86BOX_TARGET} POST_BUILD COMMAND paxctl ARGS +m $<TARGET_FILE:${86BOX_TARGET}> COMMENT "Disable PaX MPROTECT")
 endif()
