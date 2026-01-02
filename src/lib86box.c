@@ -65,6 +65,11 @@ static void lib86box_blit(int x, int y, int w, int h, int monitor_index)
 
 int lib86box_init(const char *config_path, const char *rom_path)
 {
+    return lib86box_init_ex(config_path, rom_path, NULL);
+}
+
+int lib86box_init_ex(const char *config_path, const char *rom_path, const char *global_config_path)
+{
     if (lib86box_initialized) {
         return -1;  /* Already initialized */
     }
@@ -75,11 +80,13 @@ int lib86box_init(const char *config_path, const char *rom_path)
     static char arg_config[] = "-C";
     static char arg_rom[] = "-R";
     static char arg_vmpath[] = "-P";
+    static char arg_global[] = "-O";
     static char config_buf[2048];
     static char rom_buf[2048];
     static char vmpath_buf[2048];
+    static char global_buf[2048];
 
-    char *fake_argv[12];
+    char *fake_argv[16];
     int fake_argc = 1;
     fake_argv[0] = arg0;
 
@@ -106,6 +113,13 @@ int lib86box_init(const char *config_path, const char *rom_path)
         rom_buf[sizeof(rom_buf) - 1] = '\0';
         fake_argv[fake_argc++] = arg_rom;
         fake_argv[fake_argc++] = rom_buf;
+    }
+
+    if (global_config_path) {
+        strncpy(global_buf, global_config_path, sizeof(global_buf) - 1);
+        global_buf[sizeof(global_buf) - 1] = '\0';
+        fake_argv[fake_argc++] = arg_global;
+        fake_argv[fake_argc++] = global_buf;
     }
 
     fake_argv[fake_argc] = NULL;

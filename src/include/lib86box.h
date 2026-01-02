@@ -44,6 +44,12 @@ typedef struct {
  * Returns 0 on success, non-zero on failure */
 int lib86box_init(const char *config_path, const char *rom_path);
 
+/* Initialize 86Box with config file, ROM path, and global config path
+ * global_config_path: path to global config file (86box_global.cfg)
+ *                     if NULL, uses default system location
+ * Returns 0 on success, non-zero on failure */
+int lib86box_init_ex(const char *config_path, const char *rom_path, const char *global_config_path);
+
 /* Shutdown 86Box and free all resources */
 void lib86box_shutdown(void);
 
