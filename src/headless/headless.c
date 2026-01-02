@@ -7,6 +7,7 @@
  */
 
 #ifdef __linux__
+#    define _GNU_SOURCE
 #    define _FILE_OFFSET_BITS   64
 #    define _LARGEFILE64_SOURCE 1
 #endif
