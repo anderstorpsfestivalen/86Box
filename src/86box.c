@@ -109,6 +109,11 @@
 #include <86box/acpi.h>
 #include <86box/nv/vid_nv_rivatimer.h>
 #include <86box/vfio.h>
+#include <lib86box.h>
+
+/* Forward declarations for lib86box log callback functions (defined in lib86box.c) */
+extern int lib86box_log_has_callback(void);
+extern void lib86box_log_emit(int level, const char *message);
 
 // Disable c99-designator to avoid the warnings about int ng
 #ifdef __clang__
@@ -393,9 +398,27 @@ pclog_ex(UNUSED(const char *fmt), UNUSED(va_list ap))
     if (strcmp(fmt, "") == 0)
         return;
 
+    vsprintf(temp, fmt, ap);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        if (suppr_seen && !strcmp(buff, temp))
+            seen++;
+        else {
+            if (suppr_seen && seen) {
+                char repeat_msg[64];
+                snprintf(repeat_msg, sizeof(repeat_msg), "*** %d repeats ***\n", seen);
+                lib86box_log_emit(LIB86BOX_LOG_DEBUG, repeat_msg);
+            }
+            seen = 0;
+            strcpy(buff, temp);
+            lib86box_log_emit(LIB86BOX_LOG_DEBUG, temp);
+        }
+        return;
+    }
+
     pclog_ensure_stdlog_open();
 
-    vsprintf(temp, fmt, ap);
     if (suppr_seen && !strcmp(buff, temp))
         seen++;
     else {
@@ -439,6 +462,14 @@ always_log(const char *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
+    vsprintf(temp, fmt, ap);
+    va_end(ap);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        lib86box_log_emit(LIB86BOX_LOG_INFO, temp);
+        return;
+    }
 
     if (stdlog == NULL) {
         if (log_path[0] != '\0') {
@@ -449,10 +480,8 @@ always_log(const char *fmt, ...)
             stdlog = stdout;
     }
 
-    vsprintf(temp, fmt, ap);
     fprintf(stdlog, "%s", temp);
     fflush(stdlog);
-    va_end(ap);
 }
 
 /* Log a fatal error, and display a UI message before exiting. */
@@ -464,20 +493,25 @@ fatal(const char *fmt, ...)
     char   *sp;
 
     va_start(ap, fmt);
-
-    if (stdlog == NULL) {
-        if (log_path[0] != '\0') {
-            stdlog = plat_fopen(log_path, "w");
-            if (stdlog == NULL)
-                stdlog = stdout;
-        } else
-            stdlog = stdout;
-    }
-
     vsprintf(temp, fmt, ap);
-    fprintf(stdlog, "%s", temp);
-    fflush(stdlog);
     va_end(ap);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        lib86box_log_emit(LIB86BOX_LOG_ERROR, temp);
+    } else {
+        if (stdlog == NULL) {
+            if (log_path[0] != '\0') {
+                stdlog = plat_fopen(log_path, "w");
+                if (stdlog == NULL)
+                    stdlog = stdout;
+            } else
+                stdlog = stdout;
+        }
+
+        fprintf(stdlog, "%s", temp);
+        fflush(stdlog);
+    }
 
     nvr_save();
 
@@ -499,7 +533,8 @@ fatal(const char *fmt, ...)
        to avoid things like threads getting stuck. */
     do_stop();
 
-    fflush(stdlog);
+    if (stdlog)
+        fflush(stdlog);
 
     exit(-1);
 }
@@ -510,18 +545,24 @@ fatal_ex(const char *fmt, va_list ap)
     char  temp[LOG_SIZE_BUFFER];
     char *sp;
 
-    if (stdlog == NULL) {
-        if (log_path[0] != '\0') {
-            stdlog = plat_fopen(log_path, "w");
-            if (stdlog == NULL)
-                stdlog = stdout;
-        } else
-            stdlog = stdout;
-    }
-
     vsprintf(temp, fmt, ap);
-    fprintf(stdlog, "%s", temp);
-    fflush(stdlog);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        lib86box_log_emit(LIB86BOX_LOG_ERROR, temp);
+    } else {
+        if (stdlog == NULL) {
+            if (log_path[0] != '\0') {
+                stdlog = plat_fopen(log_path, "w");
+                if (stdlog == NULL)
+                    stdlog = stdout;
+            } else
+                stdlog = stdout;
+        }
+
+        fprintf(stdlog, "%s", temp);
+        fflush(stdlog);
+    }
 
     nvr_save();
 
@@ -543,7 +584,8 @@ fatal_ex(const char *fmt, va_list ap)
        to avoid things like threads getting stuck. */
     do_stop();
 
-    fflush(stdlog);
+    if (stdlog)
+        fflush(stdlog);
 }
 
 /* Log a warning error, and display a UI message without exiting. */
@@ -555,20 +597,25 @@ warning(const char *fmt, ...)
     char   *sp;
 
     va_start(ap, fmt);
-
-    if (stdlog == NULL) {
-        if (log_path[0] != '\0') {
-            stdlog = plat_fopen(log_path, "w");
-            if (stdlog == NULL)
-                stdlog = stdout;
-        } else
-            stdlog = stdout;
-    }
-
     vsprintf(temp, fmt, ap);
-    fprintf(stdlog, "%s", temp);
-    fflush(stdlog);
     va_end(ap);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        lib86box_log_emit(LIB86BOX_LOG_WARNING, temp);
+    } else {
+        if (stdlog == NULL) {
+            if (log_path[0] != '\0') {
+                stdlog = plat_fopen(log_path, "w");
+                if (stdlog == NULL)
+                    stdlog = stdout;
+            } else
+                stdlog = stdout;
+        }
+
+        fprintf(stdlog, "%s", temp);
+        fflush(stdlog);
+    }
 
     /* Make sure the message does not have a trailing newline. */
     if ((sp = strchr(temp, '\n')) != NULL)
@@ -578,7 +625,8 @@ warning(const char *fmt, ...)
 
     ui_msgbox(MBX_ERROR | MBX_ANSI, temp);
 
-    fflush(stdlog);
+    if (stdlog)
+        fflush(stdlog);
 
     do_pause(0);
 }
@@ -589,18 +637,24 @@ warning_ex(const char *fmt, va_list ap)
     char  temp[LOG_SIZE_BUFFER];
     char *sp;
 
-    if (stdlog == NULL) {
-        if (log_path[0] != '\0') {
-            stdlog = plat_fopen(log_path, "w");
-            if (stdlog == NULL)
-                stdlog = stdout;
-        } else
-            stdlog = stdout;
-    }
-
     vsprintf(temp, fmt, ap);
-    fprintf(stdlog, "%s", temp);
-    fflush(stdlog);
+
+    /* If lib86box callback is set, use it instead of stdout/file */
+    if (lib86box_log_has_callback()) {
+        lib86box_log_emit(LIB86BOX_LOG_WARNING, temp);
+    } else {
+        if (stdlog == NULL) {
+            if (log_path[0] != '\0') {
+                stdlog = plat_fopen(log_path, "w");
+                if (stdlog == NULL)
+                    stdlog = stdout;
+            } else
+                stdlog = stdout;
+        }
+
+        fprintf(stdlog, "%s", temp);
+        fflush(stdlog);
+    }
 
     /* Make sure the message does not have a trailing newline. */
     if ((sp = strchr(temp, '\n')) != NULL)
@@ -610,7 +664,8 @@ warning_ex(const char *fmt, va_list ap)
 
     ui_msgbox(MBX_ERROR | MBX_ANSI, temp);
 
-    fflush(stdlog);
+    if (stdlog)
+        fflush(stdlog);
 
     do_pause(0);
 }

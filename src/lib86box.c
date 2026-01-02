@@ -35,6 +35,8 @@ static lib86box_frame_callback_t frame_callback = NULL;
 static void *frame_callback_user_data = NULL;
 static lib86box_resize_callback_t resize_callback = NULL;
 static void *resize_callback_user_data = NULL;
+static lib86box_log_callback_t log_callback = NULL;
+static void *log_callback_user_data = NULL;
 
 /* Last known framebuffer dimensions (for resize detection) */
 static int last_fb_width = 0;
@@ -358,4 +360,23 @@ void lib86box_set_resize_callback(lib86box_resize_callback_t callback, void *use
 {
     resize_callback = callback;
     resize_callback_user_data = user_data;
+}
+
+void lib86box_set_log_callback(lib86box_log_callback_t callback, void *user_data)
+{
+    log_callback = callback;
+    log_callback_user_data = user_data;
+}
+
+/* Internal function called by 86box.c logging functions */
+int lib86box_log_has_callback(void)
+{
+    return log_callback != NULL;
+}
+
+void lib86box_log_emit(int level, const char *message)
+{
+    if (log_callback) {
+        log_callback(level, message, log_callback_user_data);
+    }
 }

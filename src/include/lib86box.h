@@ -131,6 +131,27 @@ void lib86box_set_frame_callback(lib86box_frame_callback_t callback, void *user_
 typedef void (*lib86box_resize_callback_t)(int width, int height, void *user_data);
 void lib86box_set_resize_callback(lib86box_resize_callback_t callback, void *user_data);
 
+/*
+ * Logging
+ */
+
+/* Log levels */
+#define LIB86BOX_LOG_DEBUG   0
+#define LIB86BOX_LOG_INFO    1
+#define LIB86BOX_LOG_WARNING 2
+#define LIB86BOX_LOG_ERROR   3
+
+/* Log callback - called for all log messages when set
+ * level: one of LIB86BOX_LOG_* constants
+ * message: null-terminated log message (may include newline)
+ * user_data: user data passed to lib86box_set_log_callback */
+typedef void (*lib86box_log_callback_t)(int level, const char *message, void *user_data);
+
+/* Set log callback
+ * When set, all log output goes to this callback instead of stdout/file
+ * Pass NULL to restore default logging behavior */
+void lib86box_set_log_callback(lib86box_log_callback_t callback, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif
