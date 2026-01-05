@@ -10,6 +10,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+#endif
 
 #include <86box/86box.h>
 #include <86box/config.h>
@@ -193,6 +196,10 @@ void lib86box_start(void)
     lib86box_running = true;
 }
 
+/* Emulation timing - track absolute ticks to never lose time */
+static uint64_t emu_start_time_us = 0;
+static uint64_t emu_total_ticks = 0;
+
 void lib86box_pause(void)
 {
     if (!lib86box_initialized) {
@@ -208,7 +215,34 @@ void lib86box_resume(void)
         return;
     }
 
+    /* Reset timing to avoid catchup burst after pause */
+    emu_start_time_us = 0;
+
     dopause = 0;
+}
+
+/* Get current time in microseconds for precision */
+static uint64_t get_time_us(void)
+{
+#ifdef _WIN32
+    LARGE_INTEGER freq, count;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&count);
+    return (uint64_t)(count.QuadPart * 1000000 / freq.QuadPart);
+#elif defined(__APPLE__)
+    /* Use mach_absolute_time on macOS */
+    static mach_timebase_info_data_t timebase = {0};
+    if (timebase.denom == 0) {
+        mach_timebase_info(&timebase);
+    }
+    uint64_t ticks = mach_absolute_time();
+    /* Convert to microseconds */
+    return (ticks * timebase.numer / timebase.denom) / 1000;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+#endif
 }
 
 void lib86box_run_frame(void)
@@ -217,11 +251,33 @@ void lib86box_run_frame(void)
         return;
     }
 
-    /* Run emulation for ~16ms worth of time (targeting 60fps display).
-     * pc_run() executes cpu_s->rspeed/1000 cycles, which is ~1ms of emulation.
-     * We need to call it multiple times to keep up with real time. */
-    for (int i = 0; i < 16; i++) {
+    uint64_t now_us = get_time_us();
+
+    /* Initialize start time on first call */
+    if (emu_start_time_us == 0) {
+        emu_start_time_us = now_us;
+        emu_total_ticks = 0;
+    }
+
+    /* Calculate expected ticks based on elapsed real time (1 tick = 1ms) */
+    uint64_t elapsed_us = now_us - emu_start_time_us;
+    uint64_t expected_ticks = elapsed_us / 1000;
+
+    /* How many ticks we need to run to catch up */
+    int64_t ticks_needed = (int64_t)(expected_ticks - emu_total_ticks);
+
+    /* Cap per-frame to avoid death spiral, but track deficit for next frame */
+    if (ticks_needed > 100) {
+        /* We're too far behind - reset timing to avoid permanent catchup mode */
+        emu_start_time_us = now_us;
+        emu_total_ticks = 0;
+        ticks_needed = 16; /* Run a normal frame's worth */
+    }
+
+    /* Run pc_run() for each tick we owe */
+    for (int64_t i = 0; i < ticks_needed; i++) {
         pc_run();
+        emu_total_ticks++;
     }
 
     /* Process mouse input - the timer-based polling may not work reliably in lib mode */
