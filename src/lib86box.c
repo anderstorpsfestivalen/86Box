@@ -313,6 +313,44 @@ bool lib86box_is_running(void)
     return lib86box_initialized && lib86box_running && !dopause;
 }
 
+/*
+ * Run a single emulation tick (1ms of emulated time).
+ * Call this in a tight loop from your emulation thread.
+ * This is more suitable for threaded operation than lib86box_run_frame().
+ * Returns true if a new frame was completed (framebuffer updated).
+ */
+bool lib86box_run_tick(void)
+{
+    if (!lib86box_initialized || !lib86box_running || dopause) {
+        return false;
+    }
+
+    /* Check dirty state before running - we'll compare after */
+    bool was_dirty = atomic_load(&lib86box_fb_dirty);
+
+    /* Run one tick of emulation */
+    pc_run();
+
+    /* Check for resize */
+    monitor_t *mon = &monitors[0];
+    if (mon->target_buffer && mon->mon_unscaled_size_x > 0 && mon->mon_unscaled_size_y > 0) {
+        int w = mon->mon_unscaled_size_x;
+        int h = mon->mon_unscaled_size_y;
+
+        if (w != last_fb_width || h != last_fb_height) {
+            last_fb_width = w;
+            last_fb_height = h;
+
+            if (resize_callback) {
+                resize_callback(w, h, resize_callback_user_data);
+            }
+        }
+    }
+
+    /* Return true if framebuffer became dirty during this tick */
+    return !was_dirty && atomic_load(&lib86box_fb_dirty);
+}
+
 void lib86box_reset_hard(void)
 {
     if (!lib86box_initialized) {

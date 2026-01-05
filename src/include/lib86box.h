@@ -81,6 +81,12 @@ void lib86box_resume(void);
  * Executes approximately 1/100th of a second of emulated time */
 void lib86box_run_frame(void);
 
+/* Run a single emulation tick (1ms of emulated time)
+ * Call this in a tight loop from your emulation thread.
+ * This is more suitable for threaded operation than lib86box_run_frame().
+ * Returns true if a new frame was completed (framebuffer updated) */
+bool lib86box_run_tick(void);
+
 /* Check if emulation is currently running */
 bool lib86box_is_running(void);
 
