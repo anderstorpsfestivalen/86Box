@@ -50,6 +50,16 @@ int lib86box_init(const char *config_path, const char *rom_path);
  * Returns 0 on success, non-zero on failure */
 int lib86box_init_ex(const char *config_path, const char *rom_path, const char *global_config_path);
 
+/* Initialize 86Box with all paths including assets
+ * config_path: path to machine-specific config file
+ * rom_path: path to ROMs directory
+ * asset_path: path to assets directory (sounds, language files, etc.)
+ *             if NULL, uses default asset search paths
+ * global_config_path: path to global config file (86box_global.cfg)
+ *                     if NULL, uses default system location
+ * Returns 0 on success, non-zero on failure */
+int lib86box_init_full(const char *config_path, const char *rom_path, const char *asset_path, const char *global_config_path);
+
 /* Shutdown 86Box and free all resources */
 void lib86box_shutdown(void);
 
