@@ -12,6 +12,8 @@
 #include <stdatomic.h>
 #ifdef __APPLE__
 #include <mach/mach_time.h>
+#else
+#include <time.h>
 #endif
 
 #include <86box/86box.h>
